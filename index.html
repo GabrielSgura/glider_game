@@ -50,6 +50,9 @@
     let totalObstaclesSpawned = 0;
     
     let gameOverTimer = 0;
+    
+    // NEW: Two-tap start state
+    let isFullscreenReady = false; 
 
     // --- Configuration ---
     const CONFIG = {
@@ -58,12 +61,30 @@
         speed: 3,
         
         // Spawning configs
-        spawnRateNormal: 100, // Closer than before (was 150)
-        spawnRateRapid: 35,   // Very fast for the burst phase
+        spawnRateNormal: 100, 
+        spawnRateRapid: 35,   
         
         gapSize: 200,
         invulnerabilityDuration: 180,
     };
+
+    /**
+     * Attempts to enter fullscreen mode.
+     */
+    function goFullscreen() {
+        const element = document.documentElement;
+        if (document.fullscreenElement === null) {
+            if (element.requestFullscreen) {
+                element.requestFullscreen();
+            } else if (element.mozRequestFullScreen) { // Firefox
+                element.mozRequestFullScreen();
+            } else if (element.webkitRequestFullscreen) { // Chrome, Safari and Opera
+                element.webkitRequestFullscreen();
+            } else if (element.msRequestFullscreen) { // IE/Edge
+                element.msRequestFullscreen();
+            }
+        }
+    }
 
     // --- Player Object ---
     const player = {
@@ -82,15 +103,13 @@
             this.rotation = 0;
             this.color = '#FFFFFF';
             this.invulnerableTimer = 0;
+            isFullscreenReady = false; // Reset the tap flag
         },
 
         update: function() {
             this.velocity += CONFIG.gravity;
             this.y += this.velocity;
 
-            // Calculate rotation based on velocity
-            // Limit rotation so it doesn't spin wildly
-            // 0.1 multiplier gives a nice weight to the turn
             this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
 
             if (this.invulnerableTimer > 0) {
@@ -117,12 +136,8 @@
             
             ctx.fillStyle = this.color;
             ctx.beginPath();
-            // Draw centered at 0,0 relative to translation
-            // Tip (Right)
             ctx.moveTo(this.size, 0);
-            // Bottom Left
             ctx.lineTo(-this.size, this.size);
-            // Top Left
             ctx.lineTo(-this.size, -this.size);
             ctx.closePath();
             ctx.fill();
@@ -192,7 +207,6 @@
         }
 
         checkCollision(p) {
-            // Adjust hit box slightly for rotation leniency
             const hitSize = p.size * 0.8;
             
             const pLeft = p.x - hitSize;
@@ -228,7 +242,7 @@
         lastLifeScore = 0;
         obstacles = [];
         totalObstaclesSpawned = 0;
-        obstacleSpawnTimer = 0; // Trigger spawn immediately
+        obstacleSpawnTimer = 0; 
         player.reset();
         currentState = STATE.PLAYING;
     }
@@ -255,7 +269,16 @@
         if (e.type === 'touchstart') e.preventDefault();
 
         if (currentState === STATE.TITLE) {
-            initGame();
+            if (!isFullscreenReady) {
+                // TAP 1: Go Fullscreen
+                goFullscreen();
+                isFullscreenReady = true;
+                // Force a redraw to update the title message
+                drawTitle(); 
+            } else {
+                // TAP 2: Start Game
+                initGame();
+            }
         } else if (currentState === STATE.PLAYING) {
             player.jump();
         } else if (currentState === STATE.GAMEOVER) {
@@ -290,8 +313,13 @@
         ctx.textAlign = 'center';
         ctx.font = 'bold 40px "Courier New"';
         ctx.fillText("glider_game", width / 2, height / 2);
+
         ctx.font = '16px "Courier New"';
-        ctx.fillText("Tap to Start", width / 2, height / 2 + 40);
+        let promptText = isFullscreenReady 
+            ? "Tap to START"
+            : "Tap to ENABLE FULLSCREEN";
+        
+        ctx.fillText(promptText, width / 2, height / 2 + 40);
     }
 
     function drawGameOver() {
@@ -315,19 +343,14 @@
             drawTitle();
         } 
         else if (currentState === STATE.PLAYING) {
-            // --- Logic for Dynamic Spawning ---
             obstacleSpawnTimer--;
             
             if (obstacleSpawnTimer <= 0) {
                 obstacles.push(new Obstacle());
                 totalObstaclesSpawned++;
 
-                // Logic: Cycle of 50.
-                // 0 to 44 (45 total) -> Normal Speed
-                // 45 to 49 (5 total) -> Rapid Speed
                 const cyclePos = totalObstaclesSpawned % 50;
                 
-                // Note: The timer sets the delay *until the next* obstacle
                 if (cyclePos >= 45) {
                     obstacleSpawnTimer = CONFIG.spawnRateRapid;
                 } else {
@@ -369,5 +392,4 @@
 </script>
 </body>
 </html>
-
 
