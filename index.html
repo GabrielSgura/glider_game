@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>glider_game</title>
     <style>
+        /* Ensure the body and HTML take up the full available viewport space */
+        html, body {
+            height: 100%;
+            width: 100%;
+        }
         body {
             margin: 0;
             padding: 0;
@@ -16,8 +21,11 @@
             -webkit-user-select: none;
         }
 
+        /* Ensure the canvas fills its container */
         canvas {
             display: block;
+            width: 100%;
+            height: 100%;
         }
     </style>
 </head>
@@ -68,31 +76,32 @@
     };
 
     /**
-     * Attempts to enter fullscreen mode using all available vendor prefixes.
-     * Logs success or failure to the console.
+     * Attempts to enter fullscreen mode. We try the whole document first,
+     * as this is the standard for proper fullscreen on mobile browsers.
      */
     function goFullscreen() {
-        const element = document.documentElement; // Target the entire page
+        // Target the parent document element (<html>)
+        const element = document.documentElement; 
+        
         if (document.fullscreenElement === null) {
             
+            // Comprehensive check for all vendor-prefixed request functions (Chrome is webkit)
             const requestFn = element.requestFullscreen || 
+                              element.webkitRequestFullscreen || // Chrome, Safari
                               element.mozRequestFullScreen || 
-                              element.webkitRequestFullscreen || 
                               element.msRequestFullscreen;
 
             if (requestFn) {
-                // Call the found function and handle potential errors (like denied permission)
-                const requestPromise = requestFn.call(element);
-                
-                if (requestPromise && requestPromise.catch) {
-                    requestPromise.catch(err => {
-                        console.error("Fullscreen request denied or failed:", err);
-                    });
-                } else {
-                    console.log("Fullscreen request initiated (non-Promise compatible).");
-                }
-            } else {
-                console.log("Fullscreen API not supported by this browser or environment.");
+                // Use the found function
+                requestFn.call(element).catch(() => {
+                    // Fallback attempt: Try to make the canvas element fullscreen if the document fails
+                    const canvasFn = canvas.requestFullscreen || canvas.webkitRequestFullscreen;
+                    if (canvasFn) {
+                        canvasFn.call(canvas).catch(() => {
+                            // If all requests fail, we accept the environment limitation
+                        });
+                    }
+                });
             }
         }
     }
@@ -239,7 +248,7 @@
     // --- Core Functions ---
 
     function resize() {
-        // Use document dimensions for maximum coverage, essential for fullscreen
+        // Use window dimensions, which correctly represent the screen size in fullscreen
         width = window.innerWidth;
         height = window.innerHeight;
         canvas.width = width;
@@ -278,14 +287,15 @@
     // --- Input Handling ---
 
     function handleInput(e) {
+        // Prevent default touch behavior (like zooming or scrolling)
         if (e.type === 'touchstart') e.preventDefault();
 
         if (currentState === STATE.TITLE) {
             if (!isFullscreenReady) {
-                // TAP 1: Go Fullscreen
+                // TAP 1: Go Fullscreen (if permitted)
                 goFullscreen();
                 isFullscreenReady = true;
-                // Force a redraw to update the title message
+                // Since fullscreen might or might not happen, we update the prompt regardless
                 drawTitle(); 
             } else {
                 // TAP 2: Start Game
@@ -300,7 +310,7 @@
         }
     }
 
-    // Listeners must be passive: false for touch events to prevent default behavior
+    // Event listeners
     window.addEventListener('resize', resize);
     window.addEventListener('touchstart', handleInput, { passive: false });
     window.addEventListener('mousedown', handleInput);
@@ -330,7 +340,7 @@
         ctx.font = '16px "Courier New"';
         let promptText = isFullscreenReady 
             ? "Tap to START"
-            : "Tap to ENABLE FULLSCREEN (Check console for status)";
+            : "Tap to ENABLE FULLSCREEN (1/2)";
         
         ctx.fillText(promptText, width / 2, height / 2 + 40);
     }
@@ -405,4 +415,5 @@
 </script>
 </body>
 </html>
+
 
