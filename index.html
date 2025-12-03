@@ -16,7 +16,7 @@
             background-color: #000000;
             overflow: hidden;
             font-family: 'Courier New', Courier, monospace;
-            touch-action: none;
+            touch-action: none; /* Prevents default mobile scrolling/zooming */
             user-select: none;
             -webkit-user-select: none;
         }
@@ -59,9 +59,6 @@
     
     let gameOverTimer = 0;
     
-    // Two-tap start state
-    let isFullscreenReady = false; 
-
     // --- Configuration ---
     const CONFIG = {
         gravity: 0.15,
@@ -73,29 +70,8 @@
         
         gapSize: 200,
         invulnerabilityDuration: 180,
+        POINTS_FOR_LIFE: 40, // Points required for an extra life
     };
-
-    /**
-     * Attempts to enter fullscreen mode by targeting the document body, 
-     * using the direct logic provided in your bookmarklet suggestion.
-     */
-    function goFullscreen() {
-        const targetElement = document.body;
-        
-        // Check if we are already in fullscreen mode
-        if (document.fullscreenElement === null) {
-            
-            // Use the standard requestFullscreen method, which is the most reliable in modern Chrome
-            const requestFn = targetElement.requestFullscreen || targetElement.webkitRequestFullscreen; 
-
-            if (requestFn) {
-                // Call the function and handle potential failure (which usually happens due to permission issues)
-                requestFn.call(targetElement).catch(() => {
-                    // Fail silently, but the user is still on the "Tap to Start" prompt
-                });
-            }
-        }
-    }
 
     // --- Player Object ---
     const player = {
@@ -114,7 +90,7 @@
             this.rotation = 0;
             this.color = '#FFFFFF';
             this.invulnerableTimer = 0;
-            isFullscreenReady = false;
+            // Fullscreen logic removed
         },
 
         update: function() {
@@ -173,7 +149,7 @@
         }
     };
 
-    // --- Obstacles Manager (unchanged logic) ---
+    // --- Obstacles Manager ---
     let obstacles = [];
 
     class Obstacle {
@@ -259,10 +235,13 @@
         currentState = STATE.PLAYING;
     }
 
+    /**
+     * Checks if the player has earned an extra life (every 40 points).
+     */
     function checkExtraLife() {
-        if (score - lastLifeScore >= 50) {
+        if (score - lastLifeScore >= CONFIG.POINTS_FOR_LIFE) {
             lives++;
-            lastLifeScore += 50;
+            lastLifeScore += CONFIG.POINTS_FOR_LIFE;
         }
     }
 
@@ -281,15 +260,8 @@
         if (e.type === 'touchstart') e.preventDefault();
 
         if (currentState === STATE.TITLE) {
-            if (!isFullscreenReady) {
-                // TAP 1: Go Fullscreen
-                goFullscreen();
-                isFullscreenReady = true;
-                drawTitle(); 
-            } else {
-                // TAP 2: Start Game
-                initGame();
-            }
+            // Immediately start the game on the first tap/click
+            initGame();
         } else if (currentState === STATE.PLAYING) {
             player.jump();
         } else if (currentState === STATE.GAMEOVER) {
@@ -326,9 +298,7 @@
         ctx.fillText("glider_game", width / 2, height / 2);
 
         ctx.font = '16px "Courier New"';
-        let promptText = isFullscreenReady 
-            ? "Tap to START"
-            : "Tap to ENABLE FULLSCREEN (1/2)";
+        let promptText = "Tap/Click or Space to Start";
         
         ctx.fillText(promptText, width / 2, height / 2 + 40);
     }
@@ -363,8 +333,10 @@
                 const cyclePos = totalObstaclesSpawned % 50;
                 
                 if (cyclePos >= 45) {
+                    // Rapid spawn section
                     obstacleSpawnTimer = CONFIG.spawnRateRapid;
                 } else {
+                    // Normal spawn section
                     obstacleSpawnTimer = CONFIG.spawnRateNormal;
                 }
             }
