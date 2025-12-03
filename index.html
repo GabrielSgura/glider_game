@@ -66,11 +66,12 @@
         speed: 3,
         
         spawnRateNormal: 100, 
-        spawnRateRapid: 35,   
+        spawnRateRapid: 50,   
         
         gapSize: 200,
         invulnerabilityDuration: 180,
-        POINTS_FOR_LIFE: 40, // Points required for an extra life
+        POINTS_FOR_LIFE: 40, 
+        MAX_CENTER_SHIFT: 80, // NEW: Max vertical pixel shift between two consecutive obstacles
     };
 
     // --- Player Object ---
@@ -90,7 +91,6 @@
             this.rotation = 0;
             this.color = '#FFFFFF';
             this.invulnerableTimer = 0;
-            // Fullscreen logic removed
         },
 
         update: function() {
@@ -158,20 +158,25 @@
             this.x = width;
             this.passed = false;
             
-            let minGapY = CONFIG.gapSize;
-            let maxGapY = height - CONFIG.gapSize;
-            
             let center;
+            
             if (obstacles.length > 0) {
                 let lastCenter = obstacles[obstacles.length - 1].gapCenter;
-                let variance = height * 0.3; 
-                center = lastCenter + (Math.random() * variance * 2 - variance);
+                
+                // Calculate random shift: between -MAX_CENTER_SHIFT and +MAX_CENTER_SHIFT
+                const shift = (Math.random() * CONFIG.MAX_CENTER_SHIFT * 2) - CONFIG.MAX_CENTER_SHIFT; 
+                center = lastCenter + shift;
+
             } else {
                 center = height / 2;
             }
 
-            if (center < CONFIG.gapSize / 2 + 20) center = CONFIG.gapSize / 2 + 20;
-            if (center > height - (CONFIG.gapSize / 2) - 20) center = height - (CONFIG.gapSize / 2) - 20;
+            // Clamping logic to ensure the gap center stays well within screen bounds
+            const minCenter = CONFIG.gapSize / 2 + 20;
+            const maxCenter = height - (CONFIG.gapSize / 2) - 20;
+
+            if (center < minCenter) center = minCenter;
+            if (center > maxCenter) center = maxCenter;
 
             this.gapCenter = center;
             this.topHeight = center - (CONFIG.gapSize / 2);
@@ -333,7 +338,7 @@
                 const cyclePos = totalObstaclesSpawned % 50;
                 
                 if (cyclePos >= 45) {
-                    // Rapid spawn section
+                    // Rapid spawn section 
                     obstacleSpawnTimer = CONFIG.spawnRateRapid;
                 } else {
                     // Normal spawn section
