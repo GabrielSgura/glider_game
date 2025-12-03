@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>glider_game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000000;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    // --- Engine Setup ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let width, height;
+    
+    // Game State
+    const STATE = {
+        TITLE: 0,
+        PLAYING: 1,
+        GAMEOVER: 2
+    };
+    
+    let currentState = STATE.TITLE;
+    let score = 0;
+    let lives = 1;
+    let lastLifeScore = 0;
+    let highScore = localStorage.getItem('glider_highscore') || 0;
+    
+    // Spawn Logic
+    let obstacleSpawnTimer = 0;
+    let totalObstaclesSpawned = 0;
+    
+    let gameOverTimer = 0;
+
+    // --- Configuration ---
+    const CONFIG = {
+        gravity: 0.15,
+        lift: -4.0,
+        speed: 3,
+        
+        // Spawning configs
+        spawnRateNormal: 100, // Closer than before (was 150)
+        spawnRateRapid: 35,   // Very fast for the burst phase
+        
+        gapSize: 200,
+        invulnerabilityDuration: 180,
+    };
+
+    // --- Player Object ---
+    const player = {
+        x: 0,
+        y: 0,
+        velocity: 0,
+        size: 20, 
+        color: '#FFFFFF',
+        invulnerableTimer: 0,
+        rotation: 0,
+
+        reset: function() {
+            this.x = width * 0.15; 
+            this.y = height / 2;
+            this.velocity = 0;
+            this.rotation = 0;
+            this.color = '#FFFFFF';
+            this.invulnerableTimer = 0;
+        },
+
+        update: function() {
+            this.velocity += CONFIG.gravity;
+            this.y += this.velocity;
+
+            // Calculate rotation based on velocity
+            // Limit rotation so it doesn't spin wildly
+            // 0.1 multiplier gives a nice weight to the turn
+            this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
+
+            if (this.invulnerableTimer > 0) {
+                this.invulnerableTimer--;
+                this.color = '#FF0000';
+            } else {
+                this.color = '#FFFFFF';
+            }
+
+            if (this.y + this.size > height) {
+                this.y = height - this.size;
+                this.velocity = 0;
+            }
+            if (this.y - this.size < 0) {
+                this.y = this.size;
+                this.velocity = 0;
+            }
+        },
+
+        draw: function() {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+            
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            // Draw centered at 0,0 relative to translation
+            // Tip (Right)
+            ctx.moveTo(this.size, 0);
+            // Bottom Left
+            ctx.lineTo(-this.size, this.size);
+            // Top Left
+            ctx.lineTo(-this.size, -this.size);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+        },
+
+        jump: function() {
+            this.velocity = CONFIG.lift;
+        },
+
+        hit: function() {
+            if (this.invulnerableTimer > 0) return;
+
+            lives--;
+            if (lives <= 0) {
+                endGame();
+            } else {
+                this.invulnerableTimer = CONFIG.invulnerabilityDuration;
+            }
+        }
+    };
+
+    // --- Obstacles Manager ---
+    let obstacles = [];
+
+    class Obstacle {
+        constructor() {
+            this.w = 40; 
+            this.x = width;
+            this.passed = false;
+            
+            let minGapY = CONFIG.gapSize;
+            let maxGapY = height - CONFIG.gapSize;
+            
+            let center;
+            if (obstacles.length > 0) {
+                let lastCenter = obstacles[obstacles.length - 1].gapCenter;
+                let variance = height * 0.3; 
+                center = lastCenter + (Math.random() * variance * 2 - variance);
+            } else {
+                center = height / 2;
+            }
+
+            if (center < CONFIG.gapSize / 2 + 20) center = CONFIG.gapSize / 2 + 20;
+            if (center > height - (CONFIG.gapSize / 2) - 20) center = height - (CONFIG.gapSize / 2) - 20;
+
+            this.gapCenter = center;
+            this.topHeight = center - (CONFIG.gapSize / 2);
+            this.bottomY = center + (CONFIG.gapSize / 2);
+        }
+
+        update() {
+            this.x -= CONFIG.speed;
+
+            if (!this.passed && this.x + this.w < player.x - player.size) {
+                score++;
+                this.passed = true;
+                checkExtraLife();
+            }
+        }
+
+        draw() {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(this.x, 0, this.w, this.topHeight);
+            ctx.fillRect(this.x, this.bottomY, this.w, height - this.bottomY);
+        }
+
+        checkCollision(p) {
+            // Adjust hit box slightly for rotation leniency
+            const hitSize = p.size * 0.8;
+            
+            const pLeft = p.x - hitSize;
+            const pRight = p.x + hitSize;
+            const pTop = p.y - hitSize;
+            const pBottom = p.y + hitSize;
+
+            const obsLeft = this.x;
+            const obsRight = this.x + this.w;
+
+            if (pRight > obsLeft && pLeft < obsRight) {
+                if (pTop < this.topHeight) return true;
+                if (pBottom > this.bottomY) return true;
+            }
+            return false;
+        }
+    }
+
+    // --- Core Functions ---
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        CONFIG.gapSize = Math.max(150, height * 0.3); 
+        if(currentState === STATE.TITLE) drawTitle();
+    }
+
+    function initGame() {
+        score = 0;
+        lives = 1;
+        lastLifeScore = 0;
+        obstacles = [];
+        totalObstaclesSpawned = 0;
+        obstacleSpawnTimer = 0; // Trigger spawn immediately
+        player.reset();
+        currentState = STATE.PLAYING;
+    }
+
+    function checkExtraLife() {
+        if (score - lastLifeScore >= 50) {
+            lives++;
+            lastLifeScore += 50;
+        }
+    }
+
+    function endGame() {
+        currentState = STATE.GAMEOVER;
+        gameOverTimer = Date.now();
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('glider_highscore', highScore);
+        }
+    }
+
+    // --- Input Handling ---
+
+    function handleInput(e) {
+        if (e.type === 'touchstart') e.preventDefault();
+
+        if (currentState === STATE.TITLE) {
+            initGame();
+        } else if (currentState === STATE.PLAYING) {
+            player.jump();
+        } else if (currentState === STATE.GAMEOVER) {
+            if (Date.now() - gameOverTimer > 2000) {
+                initGame();
+            }
+        }
+    }
+
+    window.addEventListener('resize', resize);
+    window.addEventListener('touchstart', handleInput, { passive: false });
+    window.addEventListener('mousedown', handleInput);
+    window.addEventListener('keydown', (e) => {
+        if(e.code === 'Space') handleInput(e);
+    });
+
+    // --- Rendering Helpers ---
+
+    function drawUI() {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '20px "Courier New"';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Score: ${score}`, width - 20, 30);
+        ctx.fillText(`Lives: ${lives}`, width - 20, 60);
+    }
+
+    function drawTitle() {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, width, height);
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 40px "Courier New"';
+        ctx.fillText("glider_game", width / 2, height / 2);
+        ctx.font = '16px "Courier New"';
+        ctx.fillText("Tap to Start", width / 2, height / 2 + 40);
+    }
+
+    function drawGameOver() {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, width, height);
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'center';
+        ctx.font = '20px "Courier New"';
+        ctx.fillText(`Highscore ${highScore} points.`, width / 2, height / 2 - 20);
+        ctx.fillText("Try again.", width / 2, height / 2 + 20);
+    }
+
+    // --- Main Loop ---
+
+    function loop() {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, width, height);
+
+        if (currentState === STATE.TITLE) {
+            drawTitle();
+        } 
+        else if (currentState === STATE.PLAYING) {
+            // --- Logic for Dynamic Spawning ---
+            obstacleSpawnTimer--;
+            
+            if (obstacleSpawnTimer <= 0) {
+                obstacles.push(new Obstacle());
+                totalObstaclesSpawned++;
+
+                // Logic: Cycle of 50.
+                // 0 to 44 (45 total) -> Normal Speed
+                // 45 to 49 (5 total) -> Rapid Speed
+                const cyclePos = totalObstaclesSpawned % 50;
+                
+                // Note: The timer sets the delay *until the next* obstacle
+                if (cyclePos >= 45) {
+                    obstacleSpawnTimer = CONFIG.spawnRateRapid;
+                } else {
+                    obstacleSpawnTimer = CONFIG.spawnRateNormal;
+                }
+            }
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.update();
+                obs.draw();
+
+                if (obs.checkCollision(player)) {
+                    player.hit();
+                }
+
+                if (obs.x + obs.w < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            player.update();
+            player.draw();
+            drawUI();
+        } 
+        else if (currentState === STATE.GAMEOVER) {
+            for (let obs of obstacles) obs.draw();
+            player.draw();
+            drawUI();
+            drawGameOver();
+        }
+
+        requestAnimationFrame(loop);
+    }
+
+    resize();
+    loop();
+
+</script>
+</body>
+</html>
+
+
