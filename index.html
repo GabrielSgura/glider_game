@@ -76,31 +76,22 @@
     };
 
     /**
-     * Attempts to enter fullscreen mode. We try the whole document first,
-     * as this is the standard for proper fullscreen on mobile browsers.
+     * Attempts to enter fullscreen mode by targeting the document body, 
+     * using the direct logic provided in your bookmarklet suggestion.
      */
     function goFullscreen() {
-        // Target the parent document element (<html>)
-        const element = document.documentElement; 
+        const targetElement = document.body;
         
+        // Check if we are already in fullscreen mode
         if (document.fullscreenElement === null) {
             
-            // Comprehensive check for all vendor-prefixed request functions (Chrome is webkit)
-            const requestFn = element.requestFullscreen || 
-                              element.webkitRequestFullscreen || // Chrome, Safari
-                              element.mozRequestFullScreen || 
-                              element.msRequestFullscreen;
+            // Use the standard requestFullscreen method, which is the most reliable in modern Chrome
+            const requestFn = targetElement.requestFullscreen || targetElement.webkitRequestFullscreen; 
 
             if (requestFn) {
-                // Use the found function
-                requestFn.call(element).catch(() => {
-                    // Fallback attempt: Try to make the canvas element fullscreen if the document fails
-                    const canvasFn = canvas.requestFullscreen || canvas.webkitRequestFullscreen;
-                    if (canvasFn) {
-                        canvasFn.call(canvas).catch(() => {
-                            // If all requests fail, we accept the environment limitation
-                        });
-                    }
+                // Call the function and handle potential failure (which usually happens due to permission issues)
+                requestFn.call(targetElement).catch(() => {
+                    // Fail silently, but the user is still on the "Tap to Start" prompt
                 });
             }
         }
@@ -130,6 +121,7 @@
             this.velocity += CONFIG.gravity;
             this.y += this.velocity;
 
+            // Rotation based on velocity: up when jumping, down when falling
             this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
 
             if (this.invulnerableTimer > 0) {
@@ -181,7 +173,7 @@
         }
     };
 
-    // --- Obstacles Manager ---
+    // --- Obstacles Manager (unchanged logic) ---
     let obstacles = [];
 
     class Obstacle {
@@ -248,7 +240,6 @@
     // --- Core Functions ---
 
     function resize() {
-        // Use window dimensions, which correctly represent the screen size in fullscreen
         width = window.innerWidth;
         height = window.innerHeight;
         canvas.width = width;
@@ -287,15 +278,13 @@
     // --- Input Handling ---
 
     function handleInput(e) {
-        // Prevent default touch behavior (like zooming or scrolling)
         if (e.type === 'touchstart') e.preventDefault();
 
         if (currentState === STATE.TITLE) {
             if (!isFullscreenReady) {
-                // TAP 1: Go Fullscreen (if permitted)
+                // TAP 1: Go Fullscreen
                 goFullscreen();
                 isFullscreenReady = true;
-                // Since fullscreen might or might not happen, we update the prompt regardless
                 drawTitle(); 
             } else {
                 // TAP 2: Start Game
@@ -310,7 +299,6 @@
         }
     }
 
-    // Event listeners
     window.addEventListener('resize', resize);
     window.addEventListener('touchstart', handleInput, { passive: false });
     window.addEventListener('mousedown', handleInput);
@@ -415,5 +403,4 @@
 </script>
 </body>
 </html>
-
 
