@@ -51,7 +51,7 @@
     
     let gameOverTimer = 0;
     
-    // NEW: Two-tap start state
+    // Two-tap start state
     let isFullscreenReady = false; 
 
     // --- Configuration ---
@@ -60,7 +60,6 @@
         lift: -4.0,
         speed: 3,
         
-        // Spawning configs
         spawnRateNormal: 100, 
         spawnRateRapid: 35,   
         
@@ -69,19 +68,31 @@
     };
 
     /**
-     * Attempts to enter fullscreen mode.
+     * Attempts to enter fullscreen mode using all available vendor prefixes.
+     * Logs success or failure to the console.
      */
     function goFullscreen() {
-        const element = document.documentElement;
+        const element = document.documentElement; // Target the entire page
         if (document.fullscreenElement === null) {
-            if (element.requestFullscreen) {
-                element.requestFullscreen();
-            } else if (element.mozRequestFullScreen) { // Firefox
-                element.mozRequestFullScreen();
-            } else if (element.webkitRequestFullscreen) { // Chrome, Safari and Opera
-                element.webkitRequestFullscreen();
-            } else if (element.msRequestFullscreen) { // IE/Edge
-                element.msRequestFullscreen();
+            
+            const requestFn = element.requestFullscreen || 
+                              element.mozRequestFullScreen || 
+                              element.webkitRequestFullscreen || 
+                              element.msRequestFullscreen;
+
+            if (requestFn) {
+                // Call the found function and handle potential errors (like denied permission)
+                const requestPromise = requestFn.call(element);
+                
+                if (requestPromise && requestPromise.catch) {
+                    requestPromise.catch(err => {
+                        console.error("Fullscreen request denied or failed:", err);
+                    });
+                } else {
+                    console.log("Fullscreen request initiated (non-Promise compatible).");
+                }
+            } else {
+                console.log("Fullscreen API not supported by this browser or environment.");
             }
         }
     }
@@ -103,7 +114,7 @@
             this.rotation = 0;
             this.color = '#FFFFFF';
             this.invulnerableTimer = 0;
-            isFullscreenReady = false; // Reset the tap flag
+            isFullscreenReady = false;
         },
 
         update: function() {
@@ -228,6 +239,7 @@
     // --- Core Functions ---
 
     function resize() {
+        // Use document dimensions for maximum coverage, essential for fullscreen
         width = window.innerWidth;
         height = window.innerHeight;
         canvas.width = width;
@@ -288,6 +300,7 @@
         }
     }
 
+    // Listeners must be passive: false for touch events to prevent default behavior
     window.addEventListener('resize', resize);
     window.addEventListener('touchstart', handleInput, { passive: false });
     window.addEventListener('mousedown', handleInput);
@@ -317,7 +330,7 @@
         ctx.font = '16px "Courier New"';
         let promptText = isFullscreenReady 
             ? "Tap to START"
-            : "Tap to ENABLE FULLSCREEN";
+            : "Tap to ENABLE FULLSCREEN (Check console for status)";
         
         ctx.fillText(promptText, width / 2, height / 2 + 40);
     }
